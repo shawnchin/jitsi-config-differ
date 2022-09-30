@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Jitsi Config Differ</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.14/dist/css/bootstrap-select.min.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/diff2html/bundles/css/diff2html.min.css"/>
+    <!--    <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.6.0/build/styles/default.min.css">-->
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"
+            integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mustache@4.2.0/mustache.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.14/dist/js/bootstrap-select.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html-ui.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
+    <!--    <script src="//cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.6.0/build/highlight.min.js"></script>-->
+    <script src="hotdiffer.js"></script>
+</head>
+<body>
+<div class="mt-3 text-center">
+    <div class="d-none" id="start-over-container">
+        <div class="float-right mr-3 mt-5">
+            <button class="btn btn-sm btn-outline-secondary mb-1" id="start-over">Compare something else</button>
+        </div>
+    </div>
+    <h1>Jitsi Config Differ</h1>
+    <div id="loading-tags" class="mt-5">
+        <div class="spinner-grow text-secondary" role="status">
+            <span class="sr-only"></span>
+        </div>
+        <div class="text-muted mt-2">
+            <small>Hold on. Loading tags...</small>
+        </div>
+    </div>
+
+    <div class="lead mt-5 d-none" id="select-tags">
+        Compare
+        <select data-live-search="true" id="fromTag">
+        </select>
+
+        with
+        <select data-live-search="true" id="toTag">
+            <option value="master">master</option>
+        </select>
+
+        <button type="button" class="btn btn-outline-dark ml-2" id="select-go">Let's Go</button>
+    </div>
+    <div class="mt-5 container" id="tag-stable-info">
+        <small class="text-muted" id="tag-stable-message">
+            &#9432;
+            <em>Showing only stable tags.
+                Want to compare unstable tags too? <a href="#" id="load-unstable">Load unstable tags.</a></em>
+        </small>
+        <small class="text-muted d-none" id="tag-unstable-message">
+            &#9432;
+            <em>Unstable tags now included in options above.</em>
+        </small>
+        <div id="loading-unstable-tags" class="mt-5 d-none">
+            <div class="spinner-grow text-secondary" role="status">
+                <span class="sr-only"></span>
+            </div>
+            <div class="text-muted mt-2">
+                <small>Hold on. Loading unstable tags...</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="body" class="mt-3"></div>
+
+<script id="diffReportTemplate" type="x-tmpl-mustache">
+    <div class="container-fluid mb-5" id='container-{{ ident }}'>
+
+        <div class='border-bottom lead'>
+            {{ project }}
+            <small>
+            (
+            <a href='https://github.com/{{ project }}/tree/{{ fromTag }}' target="_blank">{{ fromTag }}</a>
+            &rarr;
+            <a href='https://github.com/{{ project }}/tree/{{ toTag }}' target="_blank">{{ toTag }}</a>
+            )
+            </small>
+        </div>
+
+        <div class="mt-3" id='pre-content-{{ ident }}'></div>
+        <div class="mt-3" id='content-{{ ident }}'></div>
+    </div>
+
+
+</script>
+
+<script>
+    const reportTemplate = document.getElementById('diffReportTemplate').innerHTML;
+    const diffConfig = {
+        drawFileList: false,
+        // matching: 'lines',
+        outputFormat: 'side-by-side',
+        renderNothingWhenEmpty: true,
+    };
+
+    $(document).ready(function () {
+        // By default, drive everything off stable tags on jitsi-meet project
+        fetch('https://raw.githubusercontent.com/shawnchin/jitsi-repo-metadata/main/tags_stable_jitsi-meet.json')
+            .then(response => response.json())
+            .then(data => initPage(data));
+    });
+
+    function loadAndAppendUnstableTags() {
+        fetch('https://raw.githubusercontent.com/shawnchin/jitsi-repo-metadata/main/tags_unstable_jitsi-meet.json')
+            .then(response => response.json())
+            .then(data => {
+                appendMoreTags(data);
+                $('#loading-unstable-tags').remove();
+                $('#tag-unstable-message').removeClass('d-none');
+            });
+    }
+
+    function appendMoreTags(tagData) {
+        console.log(tagData);
+        const tags = tagData.tags;
+        const versions = tagData.versions.sort((a, b) => (a > b ? -1 : 1));  // more efficient than .reverse() because source data likely to be reverse sorted already
+        const moreTags = versions.map(version => tags[version].tag);
+
+        // populate tag selection boxes
+        $selectFromTag = $('#fromTag');
+        $selectToTag = $('#toTag');
+
+        $.map(moreTags, function (tag, i) {
+            const $from = $("<option>", {value: tag, text: tag}).appendTo($selectFromTag);
+            const $to = $("<option>", {value: tag, text: tag}).appendTo($selectToTag);
+        });
+
+        $('select').selectpicker('refresh');
+    }
+
+    function initPage(tagData) {
+        console.log(tagData);
+        const tags = tagData.tags;
+        const versions = tagData.versions.sort((a, b) => (a > b ? -1 : 1));  // more efficient than .reverse() because source data likely to be reverse sorted already
+        const stableTags = versions.map(version => tags[version].tag);
+
+        // populate tag selection boxes
+        $selectFromTag = $('#fromTag');
+        $selectToTag = $('#toTag');
+
+        $.map(stableTags, function (tag, i) {
+            const $from = $("<option>", {value: tag, text: tag}).appendTo($selectFromTag);
+            const $to = $("<option>", {value: tag, text: tag}).appendTo($selectToTag);
+
+            // pre-select diff between last 2 stable
+            if (i === 0) {
+                $to.attr('selected', true);
+            } else if (i === 1) {
+                $from.attr('selected', true);
+            }
+        });
+
+        $('select').selectpicker();
+
+        // button handlers
+        $('#start-over').on('click', function (e) {
+            e.preventDefault();
+            window.location.reload();
+        });
+
+        $('#select-go').on('click', function (e) {
+            e.preventDefault();
+            const fromTag = $selectFromTag.val();
+            const toTag = $selectToTag.val();
+
+            $('#select-tags').remove();
+            $('#tag-stable-info').remove();
+            renderUiAndGenerateDiffs(fromTag, toTag);
+        })
+
+        $('#load-unstable').on('click', function (e) {
+            e.preventDefault();
+            $('#tag-stable-message').remove();
+            $('#loading-unstable-tags').removeClass('d-none');
+            loadAndAppendUnstableTags();
+        });
+
+        // toggle content
+        $('#loading-tags').remove();
+        $('#select-tags').removeClass('d-none');
+    }
+
+
+    function renderUiAndGenerateDiffs(fromTag, toTag) {
+        $('#start-over-container').removeClass('d-none');
+
+        _renderFor({
+            project: 'jitsi/jitsi-meet',
+            paths: ['/config.js', '/interface_config.js'],
+            fromTag: fromTag,
+            toTag: toTag,
+        })
+
+        _renderFor({
+            project: 'jitsi/jitsi-videobridge',
+            paths: ['/jvb/src/main/resources/reference.conf'],
+            fromTag: fromTag,
+            toTag: toTag,
+        })
+
+        _renderFor({
+            project: 'jitsi/jicofo',
+            paths: [
+                {
+                    'oldPath': '/src/main/resources/reference.conf',
+                    'newPath': '/jicofo-selector/src/main/resources/reference.conf',
+                    'movedAtVersion': 7802,
+                },
+            ],
+            fromTag: fromTag,
+            toTag: toTag,
+        })
+    }
+
+    function _renderFor(params) {
+        const {project, paths, fromTag, toTag} = params;
+        const ident = randomIdent();
+        $('#body').append(Mustache.render(reportTemplate, {project, ident, fromTag, toTag}));
+
+        fetchFilesAndCompare({
+            project: project,
+            tagOld: fromTag,
+            tagNew: toTag,
+            paths: paths,
+        }).then(result => {
+            if (result.diff) {
+                const targetElement = document.getElementById('content-' + ident);
+                const diff2htmlUi = new Diff2HtmlUI(targetElement, result.diff, diffConfig);
+                diff2htmlUi.draw();
+                // diff2htmlUi.highlightCode();
+            }
+
+            if (result.unchanged) {
+                _renderUnchanged(result.unchanged, ident);
+            }
+        }).catch(e => {
+            console.error(e);
+            $('#content-' + ident).html("<div class='text-danger'><small>" +
+                "&#9785; Failed to load files for Github. Perhaps the tag does not exist on the project?" +
+                "</small></div>")
+        })
+    }
+
+    function _renderUnchanged(unchanged, ident) {
+        const $container = $('#pre-content-' + ident);
+        const $list = $('<ul>').appendTo($container);
+        $.map(unchanged, function (path) {
+            $("<li>", {html: `No changes for <code class="filename">${path}</code>`})
+                .addClass('no-change')
+                .appendTo($list);
+        });
+    }
+
+
+</script>
+
+</body>
+</html>
