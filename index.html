@@ -23,12 +23,13 @@
 </head>
 <body>
 <div class="mt-3 text-center">
+    <h1>Jitsi Config Differ</h1>
     <div class="d-none" id="start-over-container">
-        <div class="float-right mr-3 mt-5">
+        <div class="float-right mr-3 mt-1">
             <button class="btn btn-sm btn-outline-secondary mb-1" id="start-over">Compare something else</button>
         </div>
     </div>
-    <h1>Jitsi Config Differ</h1>
+
     <div id="loading-tags" class="mt-5">
         <div class="spinner-grow text-secondary" role="status">
             <span class="sr-only"></span>
@@ -246,7 +247,7 @@
         }).catch(e => {
             console.error(e);
             $('#content-' + ident).html("<div class='text-danger'><small>" +
-                "&#9785; Failed to load files for Github. Perhaps the tag does not exist on the project?" +
+                "&#9785; Failed to load files from project repo. Perhaps the tag does not exist on the project?" +
                 "</small></div>")
         })
     }
