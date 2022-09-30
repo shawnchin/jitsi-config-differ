@@ -20,6 +20,7 @@
     <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
     <!--    <script src="//cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.6.0/build/highlight.min.js"></script>-->
     <script src="hotdiffer.js"></script>
+
 </head>
 <body>
 <div class="mt-3 text-center">
@@ -46,7 +47,6 @@
 
         with
         <select data-live-search="true" id="toTag">
-            <option value="master">master</option>
         </select>
 
         <button type="button" class="btn btn-outline-dark ml-2" id="select-go">Let's Go</button>
@@ -59,7 +59,7 @@
         </small>
         <small class="text-muted d-none" id="tag-unstable-message">
             &#9432;
-            <em>Unstable tags now included in options above.</em>
+            <em>Unstable tags now included in options above. <a href="#" id="show-only-stable">Hide unstable tags.</a></em>
         </small>
         <div id="loading-unstable-tags" class="mt-5 d-none">
             <div class="spinner-grow text-secondary" role="status">
@@ -96,6 +96,9 @@
 </script>
 
 <script>
+    let stableTagPairs, allTagPairs;
+    let preselect0, preselect1;
+
     const reportTemplate = document.getElementById('diffReportTemplate').innerHTML;
     const diffConfig = {
         drawFileList: false,
@@ -111,57 +114,43 @@
             .then(data => initPage(data));
     });
 
-    function loadAndAppendUnstableTags() {
-        fetch('https://raw.githubusercontent.com/shawnchin/jitsi-repo-metadata/main/tags_unstable_jitsi-meet.json')
-            .then(response => response.json())
-            .then(data => {
-                appendMoreTags(data);
-                $('#loading-unstable-tags').remove();
-                $('#tag-unstable-message').removeClass('d-none');
-            });
+    function getStableAndUnstableTags(callback) {
+        if (allTagPairs) {
+            callback(allTagPairs);
+        } else {
+            const $spinner = $('#loading-unstable-tags').removeClass('d-none');
+            fetch('https://raw.githubusercontent.com/shawnchin/jitsi-repo-metadata/main/tags_unstable_jitsi-meet.json')
+                .then(response => response.json())
+                .then(data => {
+                    const tagPairs = data.versions.map(version => [version, data.tags[version].tag]);
+                    allTagPairs = stableTagPairs.concat(tagPairs).sort((a, b) => (a > b ? -1 : 1));
+                    $spinner.remove();
+                    callback(allTagPairs);
+                })
+        }
     }
 
-    function appendMoreTags(tagData) {
-        console.log(tagData);
-        const tags = tagData.tags;
-        const versions = tagData.versions.sort((a, b) => (a > b ? -1 : 1));  // more efficient than .reverse() because source data likely to be reverse sorted already
-        const moreTags = versions.map(version => tags[version].tag);
-
-        // populate tag selection boxes
-        $selectFromTag = $('#fromTag');
-        $selectToTag = $('#toTag');
-
-        $.map(moreTags, function (tag, i) {
-            const $from = $("<option>", {value: tag, text: tag}).appendTo($selectFromTag);
-            const $to = $("<option>", {value: tag, text: tag}).appendTo($selectToTag);
-        });
-
-        $('select').selectpicker('refresh');
+    function maybeLoadAndAppendUnstableTags() {
+        getStableAndUnstableTags(function (tagPairs) {
+            renderTagSelectors(tagPairs, true);
+            $('#loading-unstable-tags').remove();
+            $('#tag-unstable-message').removeClass('d-none').show();
+        })
     }
 
     function initPage(tagData) {
         console.log(tagData);
-        const tags = tagData.tags;
-        const versions = tagData.versions.sort((a, b) => (a > b ? -1 : 1));  // more efficient than .reverse() because source data likely to be reverse sorted already
-        const stableTags = versions.map(version => tags[version].tag);
 
-        // populate tag selection boxes
-        $selectFromTag = $('#fromTag');
-        $selectToTag = $('#toTag');
+        const tagPairs = tagData.versions.map(version => [version, tagData.tags[version].tag]);
+        const sortedTagPairs = tagPairs.sort((a, b) => (a > b ? -1 : 1));  // likely to already be reverse sorted
 
-        $.map(stableTags, function (tag, i) {
-            const $from = $("<option>", {value: tag, text: tag}).appendTo($selectFromTag);
-            const $to = $("<option>", {value: tag, text: tag}).appendTo($selectToTag);
+        // Pre-select last two stable versions, storing in global, so we can reuse if re-rendering with unstable tags
+        preselect0 = sortedTagPairs[1][1];
+        preselect1 = sortedTagPairs[0][1];
 
-            // pre-select diff between last 2 stable
-            if (i === 0) {
-                $to.attr('selected', true);
-            } else if (i === 1) {
-                $from.attr('selected', true);
-            }
-        });
+        stableTagPairs = sortedTagPairs;  // storing in global, so we can reuse if re-rendering with unstable tags
 
-        $('select').selectpicker();
+        renderTagSelectors(stableTagPairs);
 
         // button handlers
         $('#start-over').on('click', function (e) {
@@ -171,8 +160,8 @@
 
         $('#select-go').on('click', function (e) {
             e.preventDefault();
-            const fromTag = $selectFromTag.val();
-            const toTag = $selectToTag.val();
+            const fromTag = $('#fromTag').val();
+            const toTag = $('#toTag').val();
 
             $('#select-tags').remove();
             $('#tag-stable-info').remove();
@@ -181,9 +170,15 @@
 
         $('#load-unstable').on('click', function (e) {
             e.preventDefault();
-            $('#tag-stable-message').remove();
-            $('#loading-unstable-tags').removeClass('d-none');
-            loadAndAppendUnstableTags();
+            $('#tag-stable-message').hide();
+            maybeLoadAndAppendUnstableTags();
+        });
+
+        $('#show-only-stable').on('click', function (e) {
+            e.preventDefault();
+            $('#tag-unstable-message').hide();
+            renderTagSelectors(stableTagPairs, true);
+            $('#tag-stable-message').show();
         });
 
         // toggle content
@@ -191,6 +186,36 @@
         $('#select-tags').removeClass('d-none');
     }
 
+    function renderTagSelectors(tagPairs, isUpdate) {
+        const $selectFromTag = $('#fromTag').empty();
+        const $selectToTag = $('#toTag').empty();
+
+        $selectToTag.append($("<option>", {text: 'master', value: 'master'}))
+
+        $.map(tagPairs, function(tagPair, i) {
+            const [version, tag] = tagPair;
+
+            // format unstable tags a lttle differently
+            const optionClass = (!tag.startsWith('stable/')) ? 'text-muted': '';
+
+            const $from = $("<option>", {value: tag, text: tag, class: optionClass}).appendTo($selectFromTag);
+            const $to = $("<option>", {value: tag, text: tag, class: optionClass}).appendTo($selectToTag);
+
+            if (tag === preselect0) {
+                $from.attr('selected', true);
+            }
+            if (tag === preselect1) {
+                $to.attr('selected', true);
+            }
+        });
+
+        if (isUpdate) {
+            $('select').selectpicker('destroy').selectpicker();
+            // $('select').selectpicker('refresh'); // this is insufficient. 'selected' items not selected.
+        } else {
+            $('select').selectpicker();
+        }
+    }
 
     function renderUiAndGenerateDiffs(fromTag, toTag) {
         $('#start-over-container').removeClass('d-none');
