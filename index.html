@@ -257,7 +257,11 @@
         Promise.all([
             _renderFor({
                 project: 'jitsi/jitsi-meet',
-                paths: ['/config.js', '/interface_config.js'],
+                paths: [
+                    '/config.js',
+                    '/interface_config.js',
+                    '/doc/debian/jitsi-meet-prosody/prosody.cfg.lua-jvb.example',
+                ],
                 fromTag: fromTag,
                 toTag: toTag,
             }),
@@ -271,9 +275,9 @@
                 project: 'jitsi/jicofo',
                 paths: [
                     {
-                        'oldPath': '/src/main/resources/reference.conf',
-                        'newPath': '/jicofo-selector/src/main/resources/reference.conf',
-                        'movedAtVersion': 7802,
+                        oldPath: '/src/main/resources/reference.conf',
+                        newPath: '/jicofo-selector/src/main/resources/reference.conf',
+                        movedAtVersion: 7802,
                     },
                 ],
                 fromTag: fromTag,
